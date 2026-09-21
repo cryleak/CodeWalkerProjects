@@ -169,7 +169,6 @@ namespace CodeWalker.Rendering
 
             if (device != null) device.Dispose();
 
-            GC.Collect();
         }
         private void CreateRenderBuffers()
         {
@@ -297,6 +296,7 @@ namespace CodeWalker.Rendering
                 Rendering = true;
                 if(!Monitor.TryEnter(syncroot, 50))
                 {
+                    Rendering = false;
                     Thread.Sleep(10); //don't hog CPU when not able to render...
                     continue;
                 }

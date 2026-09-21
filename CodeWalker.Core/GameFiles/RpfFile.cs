@@ -12,6 +12,10 @@ namespace CodeWalker.GameFiles
 
     public class RpfFile
     {
+        public static event Action<RpfFile> ArchiveChanged;
+
+        private static void NotifyArchiveChanged(RpfFile file) => ArchiveChanged?.Invoke(file?.GetTopParent());
+
         public string Name { get; set; } //name of this RPF file/package
         public string NameLower { get; set; }
         public string Path { get; set; } //path within the RPF structure
@@ -957,6 +961,7 @@ namespace CodeWalker.GameFiles
 
         private void WriteHeader(BinaryWriter bw)
         {
+            EnsureEncryptionAvailable(Encryption);
             var namesdata = GetHeaderNamesData();
             NamesLength = (uint)namesdata.Length;
 
@@ -1345,8 +1350,7 @@ namespace CodeWalker.GameFiles
             {
                 //last entry in the RPF, so just need to grow the RPF enough to fit.
                 //this could be the header (for an empty RPF)...
-                uint newblock = FindEndBlock();
-                GrowArchive(bw, newblock + ((e != null) ? blockcount : 0));
+                GrowArchive(bw, (e != null) ? endblock : FindEndBlock());
             }
 
             //changing a file's size (not the header size!) - need to update the header..!
@@ -1503,7 +1507,7 @@ namespace CodeWalker.GameFiles
 
 
 
-        public static RpfFile CreateNew(string gtafolder, string relpath, RpfEncryption encryption = RpfEncryption.OPEN)
+        public static RpfFile CreateNew(string gtafolder, string relpath, RpfEncryption encryption = RpfEncryption.NG)
         {
             //create a new, empty RPF file in the filesystem
             //this will assume that the folder the file is going into already exists!
@@ -1529,10 +1533,11 @@ namespace CodeWalker.GameFiles
                 }
             }
 
+            NotifyArchiveChanged(file);
             return file;
         }
 
-        public static RpfFile CreateNew(RpfDirectoryEntry dir, string name, RpfEncryption encryption = RpfEncryption.OPEN)
+        public static RpfFile CreateNew(RpfDirectoryEntry dir, string name, RpfEncryption encryption = RpfEncryption.NG)
         {
             //create a new empty RPF inside the given parent RPF directory.
 
@@ -1586,6 +1591,7 @@ namespace CodeWalker.GameFiles
             }
 
 
+            NotifyArchiveChanged(file);
             return file;
         }
         
@@ -1648,6 +1654,7 @@ namespace CodeWalker.GameFiles
                 }
             }
 
+            NotifyArchiveChanged(parent);
             return entry;
         }
 
@@ -1797,6 +1804,7 @@ namespace CodeWalker.GameFiles
                 }
             }
 
+            NotifyArchiveChanged(parent);
             return entry;
         }
 
@@ -1849,6 +1857,7 @@ namespace CodeWalker.GameFiles
                 parent.UpdatePaths(entry as RpfDirectoryEntry);
             }
 
+            NotifyArchiveChanged(parent);
         }
 
 
@@ -1911,19 +1920,25 @@ namespace CodeWalker.GameFiles
                 }
             }
 
+            NotifyArchiveChanged(parent);
         }
 
 
         public static bool IsValidEncryption(RpfFile file, bool recursive = false)
         {
+            return IsValidEncryption(file, RpfEncryption.OPEN, recursive);
+        }
+
+        public static bool IsValidEncryption(RpfFile file, RpfEncryption encryption, bool recursive = false)
+        {
             if (file == null) return false;
 
-            if (file.Encryption != RpfEncryption.OPEN) return false;
+            if (file.Encryption != encryption) return false;
 
             var parent = file.Parent;
             while (parent != null)
             {
-                if (parent.Encryption != RpfEncryption.OPEN) return false;
+                if (parent.Encryption != encryption) return false;
                 parent = parent.Parent;
             }
 
@@ -1934,7 +1949,7 @@ namespace CodeWalker.GameFiles
                 {
                     var child = stack.Pop();
                     if (child == null) continue;
-                    if (child.Encryption != RpfEncryption.OPEN)
+                    if (child.Encryption != encryption)
                     {
                         return false;
                     }
@@ -1953,10 +1968,12 @@ namespace CodeWalker.GameFiles
 
         public static bool EnsureValidEncryption(RpfFile file, Func<RpfFile, bool> confirm, bool recursive = false)
         {
-            if (file == null) return false;
+            return EnsureEncryption(file, RpfEncryption.OPEN, confirm, recursive);
+        }
 
-            //currently assumes OPEN is the valid encryption type.
-            //TODO: support other encryption types!
+        public static bool EnsureEncryption(RpfFile file, RpfEncryption encryption, Func<RpfFile, bool> confirm, bool recursive = false)
+        {
+            if (file == null) return false;
 
             var files = new List<RpfFile>();
             if (recursive && (file.Children != null))
@@ -1966,7 +1983,7 @@ namespace CodeWalker.GameFiles
                 {
                     var child = stack.Pop();
                     if (child == null) continue;
-                    if (child.Encryption != RpfEncryption.OPEN)
+                    if (child.Encryption != encryption)
                     {
                         files.Add(child);
                     }
@@ -1984,7 +2001,7 @@ namespace CodeWalker.GameFiles
             var f = file;
             while (f != null)
             {
-                if (f.Encryption != RpfEncryption.OPEN)
+                if (f.Encryption != encryption)
                 {
                     if ((confirm != null) && !confirm(f))
                     {
@@ -2003,7 +2020,7 @@ namespace CodeWalker.GameFiles
             files.Reverse();
             foreach (var cfile in files)
             {
-                SetEncryptionType(cfile, RpfEncryption.OPEN);
+                SetEncryptionType(cfile, encryption);
             }
 
             return true;
@@ -2012,6 +2029,8 @@ namespace CodeWalker.GameFiles
         public static void SetEncryptionType(RpfFile file, RpfEncryption encryption)
         {
             file.Encryption = encryption;
+            file.IsAESEncrypted = encryption == RpfEncryption.AES;
+            file.IsNGEncrypted = encryption == RpfEncryption.NG;
             string fpath = file.GetPhysicalFilePath();
             using (var fstream = File.Open(fpath, FileMode.Open, FileAccess.ReadWrite))
             {
@@ -2020,6 +2039,14 @@ namespace CodeWalker.GameFiles
                     file.WriteHeader(bw);
                 }
             }
+            NotifyArchiveChanged(file);
+        }
+
+        private static void EnsureEncryptionAvailable(RpfEncryption encryption)
+        {
+            if (encryption == RpfEncryption.AES && GTA5Keys.PC_AES_KEY == null)
+                throw new InvalidOperationException("The GTA V AES key has not been loaded.");
+            if (encryption == RpfEncryption.NG) GTA5Keys.EnsureNgEncryptionTables();
         }
 
 
@@ -2121,6 +2148,7 @@ namespace CodeWalker.GameFiles
                     }
                 }
             }
+            NotifyArchiveChanged(file);
         }
 
 

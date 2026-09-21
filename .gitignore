@@ -14,3 +14,7 @@ CodeWalker.OIVInstaller/packaging/
 CodeWalker.OivsPacker/dist/
 *.oivs
 *.oivsproj
+/.idea
+/CodeWalker.Shaders
+/Shaders
+*.cso

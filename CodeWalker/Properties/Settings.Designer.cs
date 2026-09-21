@@ -814,6 +814,18 @@ namespace CodeWalker.Properties {
                 this["RPFExplorerStartFolder"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("NG")]
+        public string RPFEncryption {
+            get {
+                return ((string)(this["RPFEncryption"]));
+            }
+            set {
+                this["RPFEncryption"] = value;
+            }
+        }
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]

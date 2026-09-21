@@ -23,6 +23,7 @@ namespace CodeWalker
     public partial class ExploreForm : Form
     {
         private volatile bool Ready = false;
+        private volatile bool Closing;
 
         private Dictionary<string, FileTypeInfo> FileTypes;
         private readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
@@ -49,6 +50,11 @@ namespace CodeWalker
         private List<RpfFile> AllRpfs { get; set; }
         private GameFileCache FileCache { get; set; } = GameFileCacheFactory.Create();
         private object FileCacheSyncRoot = new object();
+        private readonly object RpfCacheSyncRoot = new object();
+        private System.Threading.Timer RpfCacheTimer;
+        private string PendingRpfCacheModsFolder;
+        private bool RpfCacheRebuilding;
+        private ToolStripMenuItem ToolsRebuildRpfCacheMenu;
 
         public bool EditMode { get; private set; } = false;
 
@@ -66,6 +72,104 @@ namespace CodeWalker
             LoadSettings();
 
             GTAFolder.UpdateEnhancedFormTitle(this);
+            RpfFile.ArchiveChanged += RpfFile_ArchiveChanged;
+            ToolsMenu.DropDownItems.Add(new ToolStripSeparator());
+            ToolsRebuildRpfCacheMenu = new ToolStripMenuItem("Rebuild RPF Cache...");
+            ToolsRebuildRpfCacheMenu.Click += ToolsRebuildRpfCacheMenu_Click;
+            ToolsMenu.DropDownItems.Add(ToolsRebuildRpfCacheMenu);
+        }
+
+        private async void ToolsRebuildRpfCacheMenu_Click(object sender, EventArgs e)
+        {
+            if (!GTAFolder.IsGen9)
+            {
+                MessageBox.Show("RPF cache rebuilding is only used by GTA V Enhanced.", "Rebuild RPF Cache");
+                return;
+            }
+
+            string gameFolder = GTAFolder.CurrentGTAFolder;
+            string modsFolder = Path.Combine(gameFolder, "mods");
+            if (!Directory.Exists(modsFolder))
+            {
+                MessageBox.Show("The mods folder does not exist.", "Rebuild RPF Cache");
+                return;
+            }
+
+            var roots = new List<string> { modsFolder };
+            string versionsFolder = Path.Combine(modsFolder, "versions");
+            if (Directory.Exists(versionsFolder)) roots.AddRange(Directory.EnumerateDirectories(versionsFolder));
+
+            ToolsRebuildRpfCacheMenu.Enabled = false;
+            StatusLabel.Text = "Rebuilding RPF cache...";
+            try
+            {
+                int rebuilt = await Task.Run(() => roots.Count(root => RpfCacheBuilder.Rebuild(gameFolder, root, UpdateErrorLog)));
+                if (Closing) return;
+                StatusLabel.Text = rebuilt > 0 ? $"Rebuilt {rebuilt} RPF cache(s)." : "No matching modded RPFs found.";
+                MessageBox.Show(StatusLabel.Text, "Rebuild RPF Cache");
+            }
+            catch (Exception ex)
+            {
+                if (Closing) return;
+                UpdateErrorLog("RPF cache rebuild failed: " + ex.Message);
+                StatusLabel.Text = "RPF cache rebuild failed.";
+                MessageBox.Show(ex.Message, "Rebuild RPF Cache", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                if (!Closing) ToolsRebuildRpfCacheMenu.Enabled = true;
+            }
+        }
+
+        private void RpfFile_ArchiveChanged(RpfFile rpf)
+        {
+            if (Closing || !GTAFolder.IsGen9 || rpf == null) return;
+            string gameFolder = Path.GetFullPath(GTAFolder.CurrentGTAFolder);
+            string filePath = Path.GetFullPath(rpf.GetPhysicalFilePath());
+            string prefix = gameFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!filePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return;
+
+            string[] parts = filePath.Substring(prefix.Length).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (parts.Length < 2 || !parts[0].Equals("mods", StringComparison.OrdinalIgnoreCase)) return;
+            string modsFolder = parts.Length > 3 && parts[1].Equals("versions", StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(gameFolder, parts[0], parts[1], parts[2])
+                : Path.Combine(gameFolder, parts[0]);
+
+            lock (RpfCacheSyncRoot)
+            {
+                PendingRpfCacheModsFolder = modsFolder;
+                if (RpfCacheTimer == null) RpfCacheTimer = new System.Threading.Timer(RebuildRpfCache, null, 750, Timeout.Infinite);
+                else RpfCacheTimer.Change(750, Timeout.Infinite);
+            }
+        }
+
+        private void RebuildRpfCache(object state)
+        {
+            if (Closing) return;
+            string modsFolder;
+            lock (RpfCacheSyncRoot)
+            {
+                if (Closing) return;
+                if (RpfCacheRebuilding)
+                {
+                    if (!Closing) RpfCacheTimer?.Change(750, Timeout.Infinite);
+                    return;
+                }
+                RpfCacheRebuilding = true;
+                modsFolder = PendingRpfCacheModsFolder;
+            }
+            try
+            {
+                RpfCacheBuilder.Rebuild(GTAFolder.CurrentGTAFolder, modsFolder, UpdateErrorLog);
+            }
+            catch (Exception ex)
+            {
+                UpdateErrorLog("RPF cache rebuild failed: " + ex.Message);
+            }
+            finally
+            {
+                lock (RpfCacheSyncRoot) RpfCacheRebuilding = false;
+            }
         }
 
         private void SetTheme(string themestr, bool changing = true)
@@ -175,6 +279,8 @@ namespace CodeWalker
         {
             //called from ExploreForm_Load
 
+            if (Closing) return;
+
             InitFileTypes();
 
             // This is probably not necessary now that the GTA folder is checked 
@@ -189,6 +295,7 @@ namespace CodeWalker
 
             Task.Run(() =>
             {
+                if (Closing) return;
                 try
                 {
                     GTA5Keys.LoadFromPath(GTAFolder.CurrentGTAFolder, GTAFolder.IsGen9, Settings.Default.Key);
@@ -199,13 +306,13 @@ namespace CodeWalker
                     return;
                 }
 
+                if (Closing) return;
                 RefreshMainTreeView();
 
+                if (Closing) return;
                 UpdateStatus("Scan complete.");
 
-                InitFileCache();
-
-                while (!IsDisposed) //run the file cache content thread until the form exits.
+                while (!Closing && !IsDisposed) //run the file cache content thread until the form exits.
                 {
                     if (FileCache.IsInited)
                     {
@@ -230,9 +337,10 @@ namespace CodeWalker
         {
             Task.Run(() =>
             {
+                if (Closing) return;
                 lock (FileCacheSyncRoot)
                 {
-                    if (!FileCache.IsInited)
+                    if (!Closing && !FileCache.IsInited)
                     {
                         UpdateStatus("Loading file cache...");
                         var allRpfs = AllRpfs;
@@ -392,6 +500,7 @@ namespace CodeWalker
         {
             try
             {
+                if (Closing) return;
                 if (InvokeRequired)
                 {
                     BeginInvoke(new Action(() => { UpdateStatus(text); }));
@@ -407,6 +516,7 @@ namespace CodeWalker
         {
             try
             {
+                if (Closing) return;
                 if (InvokeRequired)
                 {
                     BeginInvoke(new Action(() => { UpdateErrorLog(text); }));
@@ -715,6 +825,7 @@ namespace CodeWalker
 
         private void RefreshMainTreeView()
         {
+            if (Closing) return;
             Ready = false;
             AllRpfs = null;
 
@@ -735,6 +846,7 @@ namespace CodeWalker
 
             foreach (var extraroot in ExtraRootFolders)
             {
+                if (Closing) return;
                 extraroot.Clear();
 
                 if (Directory.Exists(extraroot.FullPath))
@@ -759,6 +871,7 @@ namespace CodeWalker
         }
         private void RefreshMainTreeViewRoot(MainTreeFolder f, bool extra = false)
         {
+            if (Closing) return;
             var allRpfs = new List<RpfFile>();
             var fullPath = f.FullPath;
             var subPath = f.Path;
@@ -767,6 +880,7 @@ namespace CodeWalker
 
             foreach (var path in allpaths)
             {
+                if (Closing) return;
                 var relpath = path.Replace(fullPath, "");
                 var filepathl = path.ToLowerInvariant();
 
@@ -810,6 +924,7 @@ namespace CodeWalker
                 {
                     if (filepathl.EndsWith(".rpf")) //add RPF nodes
                     {
+                        if (Closing) return;
                         RpfFile rpf = new RpfFile(path, relpath);
 
                         rpf.ScanStructure(UpdateStatus, UpdateErrorLog);
@@ -852,6 +967,7 @@ namespace CodeWalker
             }
 
 
+            if (Closing) return;
             AddMainTreeViewRoot(f);
 
             if (f.Children != null)
@@ -872,6 +988,7 @@ namespace CodeWalker
         }
         private void RecurseMainTreeViewRPF(MainTreeFolder f, List<RpfFile> allRpfs, string rootpath = null)
         {
+            if (Closing) return;
             var gamepath = GTAFolder.GetCurrentGTAFolderWithTrailingSlash();
             if (rootpath == null)
             {
@@ -885,6 +1002,7 @@ namespace CodeWalker
                 {
                     foreach (var dir in fld.Directories)
                     {
+                        if (Closing) return;
                         var relpath = dir.Path.Substring(fld.Path.Length);
                         var fullpath = f.FullPath + relpath;
                         var dirpath = dir.Path;
@@ -908,6 +1026,7 @@ namespace CodeWalker
                 {
                     foreach (var child in rpf.Children)
                     {
+                        if (Closing) return;
                         var cpath = rootpath + child.Path;
                         var ctnf = CreateRpfTreeFolder(child, (rootpath != gamepath) ? cpath : child.Path, cpath);
                         f.AddChildToHierarchy(ctnf);
@@ -931,6 +1050,7 @@ namespace CodeWalker
         }
         private void ClearMainTreeView()
         {
+            if (Closing) return;
             try
             {
                 if (InvokeRequired)
@@ -954,6 +1074,7 @@ namespace CodeWalker
         }
         private void AddMainTreeViewRoot(MainTreeFolder f)
         {
+            if (Closing) return;
             try
             {
                 if (InvokeRequired)
@@ -974,6 +1095,7 @@ namespace CodeWalker
         }
         private void AddMainTreeViewNode(MainTreeFolder f)
         {
+            if (Closing) return;
             try
             {
                 if (InvokeRequired)
@@ -1018,6 +1140,7 @@ namespace CodeWalker
         }
         private void MainTreeViewRefreshComplete()
         {
+            if (Closing) return;
             try
             {
                 if (InvokeRequired)
@@ -2211,6 +2334,7 @@ namespace CodeWalker
                 }
                 catch (Exception ex)
                 {
+                    if (Closing) return;
                     Invoke(new Action(() => { MessageBox.Show("Error copying file:\n" + ex.ToString()); }));
                     CopyToModsFolderButton.Enabled = true;
                     Cursor = Cursors.Default;
@@ -2220,6 +2344,8 @@ namespace CodeWalker
                 var rpf = new RpfFile(destpath, newrelpath);
 
                 rpf.ScanStructure(UpdateStatus, UpdateErrorLog);
+
+                if (Closing) return;
 
                 if (rpf.LastException != null) //incase of corrupted rpf (or renamed NG encrypted RPF)
                 {
@@ -2265,6 +2391,14 @@ namespace CodeWalker
 
 
 
+        private static RpfEncryption GetRpfEncryption()
+        {
+            return Enum.TryParse(Settings.Default.RPFEncryption, true, out RpfEncryption encryption) &&
+                   (encryption == RpfEncryption.OPEN || encryption == RpfEncryption.NG)
+                ? encryption
+                : RpfEncryption.NG;
+        }
+
         public bool EnsureRpfValidEncryption(RpfFile file = null, bool recursive = false)
         {
             if ((file == null) && (CurrentFolder.RpfFolder == null)) return false;
@@ -2273,11 +2407,14 @@ namespace CodeWalker
 
             if (rpf == null) return false;
 
-            if (RpfFile.IsValidEncryption(rpf, recursive)) return true;//it's already valid...
+            var encryption = GetRpfEncryption();
+            if (RpfFile.IsValidEncryption(rpf, encryption, recursive)) return true;//it's already valid...
 
             var msgr = recursive ? "(including all its parents and children) " : "";
-            var msg1 = $"Are you sure you want to change this archive {msgr}to OPEN encryption?";
-            var msg2 = "Loading by the game will require a mod loader such as OpenRPF.asi or OpenIV.asi.";
+            var msg1 = $"Are you sure you want to change this archive {msgr}to {encryption} encryption?";
+            var msg2 = encryption == RpfEncryption.OPEN
+                ? "Loading by the game will require a mod loader such as OpenRPF.asi or OpenIV.asi."
+                : "The archive table of contents will use the game's NG encryption.";
 
             var confirm = new Func<RpfFile, bool>((f) => 
             {
@@ -2295,7 +2432,7 @@ namespace CodeWalker
                 }
             }
 
-            return RpfFile.EnsureValidEncryption(rpf, recursive ? null : confirm, recursive);
+            return RpfFile.EnsureEncryption(rpf, encryption, recursive ? null : confirm, recursive);
         }
 
 
@@ -2732,7 +2869,7 @@ namespace CodeWalker
             string relpath = cpath + fname.ToLowerInvariant();
 
 
-            RpfEncryption encryption = RpfEncryption.OPEN;//TODO: select encryption mode
+            RpfEncryption encryption = GetRpfEncryption();
 
             RpfFile newrpf = null;
 
@@ -3582,6 +3719,7 @@ namespace CodeWalker
             {
                 RefreshMainTreeViewRoot(root);
 
+                if (Closing) return;
                 Invoke(new Action(() => 
                 {
                     MainTreeView.SelectedNode = root.TreeNode;
@@ -3728,12 +3866,27 @@ namespace CodeWalker
 
         private void ExploreForm_Load(object sender, EventArgs e)
         {
+            Closing = false;
             Init();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            Closing = true;
+            Searching = false;
+            lock (RpfCacheSyncRoot)
+            {
+                RpfCacheTimer?.Dispose();
+                RpfCacheTimer = null;
+            }
+            base.OnFormClosing(e);
         }
 
         private void ExploreForm_FormClosed(object sender, FormClosedEventArgs e)
         {
-            CleanupDropFolder();
+            RpfFile.ArchiveChanged -= RpfFile_ArchiveChanged;
+            RpfCacheTimer?.Dispose();
+            Task.Run(CleanupDropFolder);
             SaveSettings();
         }
 

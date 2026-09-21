@@ -15,8 +15,16 @@ namespace CodeWalker.OIVInstaller
     public class OivInstaller
     {
         public string GameFolder { get; }
-        public string ModsFolder => Path.Combine(GameFolder, "mods");
+        public string ModsFolder => string.IsNullOrEmpty(ParagonBuild)
+            ? Path.Combine(GameFolder, "mods")
+            : Path.Combine(GameFolder, "mods", "versions", ParagonBuild);
         public OivPackage Package { get; }
+        public string ParagonBuild { get; }
+        public bool UseModsFolder { get; }
+        public RpfEncryption Encryption { get; }
+        public bool CompatibilityMode { get; }
+
+        private static readonly Dictionary<string, string[]> WeaponCompatibility = CreateWeaponCompatibility();
         
         private readonly Action<string> _logAction;
         private StreamWriter _logWriter;
@@ -25,34 +33,109 @@ namespace CodeWalker.OIVInstaller
         private BackupManager _backupManager;
         private BackupSession _backupSession;
         private bool _skipBackup = false;
+        private readonly bool _isGen9;
 
         /// <summary>Largest file that can be packed into an RPF entry: the CLR's
         /// byte[] ceiling. Files bound for the file system stream and have no limit.</summary>
         private const long MaxRpfEntryBytes = 2_147_483_591L;
 
-        public OivInstaller(string gameFolder, OivPackage package, Action<string> logAction = null)
+        private static Dictionary<string, string[]> CreateWeaponCompatibility()
         {
+            var map = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            void Add(string[] files, params string[] destinations)
+            {
+                foreach (string file in files) map[file] = destinations;
+            }
+
+            Add(new[] {
+                "w_ar_specialcarbinemk2_mag2.ydr", "w_ar_specialcarbinemk2_hi.ydr",
+                "w_ar_specialcarbinemk2.ydr", "w_sg_pumpshotgunmk2.ydr",
+                "w_sg_pumpshotgunmk2_hi.ydr", "w_sg_pumpshotgunmk2.ytd",
+                "w_sg_pumpshotgunmk2+hi.ytd"
+            },
+                @"update\update.rpf\dlc_patch\mpchristmas2017\x64\models\cdimages\weapons.rpf",
+                @"update\x64\dlcpacks\mpchristmas2017\dlc.rpf\x64\models\cdimages\weapons.rpf");
+
+            Add(new[] {
+                "w_sr_heavysnipermk2_hi.ydr", "w_sr_heavysnipermk2.ydr",
+                "w_sr_heavysnipermk2_ap2.ytd", "w_sr_heavysnipermk2_mag_ap2.ytd",
+                "w_sr_heavysnipermk2_mag1.ytd", "w_sr_heavysnipermk2_mag2.ytd",
+                "w_sr_heavysnipermk2.ytd", "w_sr_heavysnipermk2_ap2.ydr",
+                "w_sr_heavysnipermk2_mag_ap2.ydr", "w_sr_heavysnipermk2_mag1.ydr",
+                "w_sr_heavysnipermk2_mag2.ydr"
+            },
+                @"update\update.rpf\dlc_patch\mpgunrunning\x64\models\cdimages\weapons.rpf",
+                @"update\x64\dlcpacks\mpgunrunning\dlc.rpf\x64\models\cdimages\weapons.rpf");
+
+            Add(new[] { "w_ar_specialcarbine_mag1.ydr" },
+                @"update\update.rpf\dlc_patch\mpbusiness\x64\models\cdimages\weapons.rpf",
+                @"update\x64\dlcpacks\patchday8ng\dlc.rpf\x64\models\cdimages\weapons.rpf");
+
+            Add(new[] { "w_lr_compactgl.ytd", "w_lr_compactgl+hi.ytd" },
+                @"update\update.rpf\dlc_patch\mpbiker\x64\models\cdimages\weapons.rpf");
+
+            Add(new[] { "w_lr_homing.ytd" },
+                @"update\update.rpf\dlc_patch\mpchristmas2\x64\models\cdimages\weapons.rpf",
+                @"update\x64\dlcpacks\patchday8ng\dlc.rpf\x64\models\cdimages\weapons.rpf");
+            Add(new[] { "w_lr_homing+hi.ytd" },
+                @"update\x64\dlcpacks\patchday8ng\dlc.rpf\x64\models\cdimages\weapons.rpf");
+
+            Add(new[] {
+                "w_sr_heavysniper_hi.ydr", "w_sr_heavysniper.ydr",
+                "w_sr_heavysniper_mag1.ytd", "w_sr_heavysniper.ytd",
+                "w_sr_heavysniper_mag1.ydr"
+            },
+                @"update\x64\dlcpacks\patchday2ng\dlc.rpf\x64\models\cdimages\weapons.rpf",
+                @"update\x64\dlcpacks\patchday3ng\dlc.rpf\x64\models\cdimages\weapons.rpf",
+                @"update\x64\dlcpacks\patchday8ng\dlc.rpf\x64\models\cdimages\weapons.rpf");
+
+            Add(new[] { "w_ex_pe.ytd", "w_ex_pe+hi.ytd", "w_lr_rpg.ytd", "w_lr_rpg+hi.ytd" },
+                @"update\x64\dlcpacks\patchday8ng\dlc.rpf\x64\models\cdimages\weapons.rpf");
+
+            Add(new[] {
+                "w_pi_flaregun.ytd", "w_pi_flaregun+hi.ytd", "w_pi_flaregun_mag1.ytd",
+                "w_pi_flaregun_mag1+hi.ytd", "w_pi_flaregun_shell.ytd",
+                "w_pi_flaregun_shell+hi.ytd"
+            },
+                @"update\x64\dlcpacks\patchday10ng\dlc.rpf\x64\models\cdimages\weapons.rpf");
+
+            return map;
+        }
+
+        public OivInstaller(string gameFolder, OivPackage package, Action<string> logAction = null,
+            string paragonBuild = null, RpfEncryption encryption = RpfEncryption.NG, bool useModsFolder = true,
+            bool compatibilityMode = false)
+        {
+            if (paragonBuild != null && paragonBuild != "18893" && paragonBuild != "23359" && paragonBuild != "27223")
+                throw new ArgumentOutOfRangeException(nameof(paragonBuild));
+            if (encryption != RpfEncryption.OPEN && encryption != RpfEncryption.NG)
+                throw new ArgumentOutOfRangeException(nameof(encryption));
+
             GameFolder = gameFolder;
             Package = package;
+            ParagonBuild = paragonBuild;
+            UseModsFolder = useModsFolder;
+            Encryption = encryption;
+            CompatibilityMode = compatibilityMode;
             _logAction = logAction ?? (_ => { });
 
             // Determine Gen9 status
-            bool isGen9 = File.Exists(Path.Combine(GameFolder, "eboot.bin")) || 
-                          File.Exists(Path.Combine(GameFolder, "GTA5_Enhanced.exe"));
+            _isGen9 = File.Exists(Path.Combine(GameFolder, "eboot.bin")) ||
+                      File.Exists(Path.Combine(GameFolder, "GTA5_Enhanced.exe"));
 
             _backupManager = new BackupManager(GameFolder);
             _backupSession = _backupManager.CreateSession(
                 Package.Metadata.Name, 
                 Package.Metadata.Description, 
                 Package.Metadata.Version,
-                isGen9
+                _isGen9
             );
         }
 
         /// <summary>
         /// Installs the package specified in the constructor
         /// </summary>
-        public void Install(IProgress<InstallProgress> progress = null, List<BackupLog> packagesToUninstall = null, UninstallMode uninstallMode = UninstallMode.Backup, bool skipBackup = false)
+        public void Install(IProgress<InstallProgress> progress = null, List<BackupLog> packagesToUninstall = null, UninstallMode uninstallMode = UninstallMode.Backup, bool skipBackup = false, bool clearModsFolder = false)
         {
             _skipBackup = skipBackup;
             InitializeLog();
@@ -62,10 +145,15 @@ namespace CodeWalker.OIVInstaller
 
             Log($"Starting installation of {Package.Metadata.Name} v{Package.Metadata.Version}");
             Log($"Game folder: {GameFolder}");
-            Log($"Mods folder: {ModsFolder}");
+            Log(UseModsFolder ? $"Mods folder: {ModsFolder}" : "Mods folder: disabled (writing directly to game files)");
+            Log($"RPF encryption: {Encryption}");
+            Log($"Weapon compatibility mode: {(CompatibilityMode ? "enabled (replace only)" : "disabled")}");
             
             // Initialize GTA5Keys - required for reading encrypted RPF files and cleanup
             InitializeKeys(progress);
+            if (Encryption == RpfEncryption.NG &&
+                (GTA5Keys.PC_NG_KEYS == null || GTA5Keys.PC_NG_ENCRYPT_TABLES == null || GTA5Keys.PC_NG_ENCRYPT_LUTs == null))
+                throw new InvalidOperationException("NG encryption was selected, but the GTA V NG keys and encryption tables could not be loaded.");
             
             // Handle requests to uninstall previous versions (passed from UI prompt)
             if (packagesToUninstall != null && packagesToUninstall.Count > 0)
@@ -84,9 +172,15 @@ namespace CodeWalker.OIVInstaller
                 Log("Cleanup complete. Proceeding with new installation...");
                 Log("----------------------------------------");
             }
+
+            if (UseModsFolder && clearModsFolder && Directory.Exists(ModsFolder))
+            {
+                Log($"Deleting old contents from: {ModsFolder}");
+                Directory.Delete(ModsFolder, recursive: true);
+            }
             
             // Ensure mods folder exists
-            if (!Directory.Exists(ModsFolder))
+            if (UseModsFolder && !Directory.Exists(ModsFolder))
             {
                 Log("Creating mods folder...");
                 Directory.CreateDirectory(ModsFolder);
@@ -97,6 +191,12 @@ namespace CodeWalker.OIVInstaller
                 foreach (var op in Package.Operations)
                 {
                     ProcessOperation(op, null, null, progress, ref currentOp, totalOps);
+                }
+
+                if (_isGen9 && UseModsFolder)
+                {
+                    try { RpfCacheBuilder.Rebuild(GameFolder, ModsFolder, Log); }
+                    catch (Exception ex) { Log($"WARNING: Could not rebuild rpf.cache: {ex.Message}"); }
                 }
 
                 // Save backup log
@@ -123,7 +223,9 @@ namespace CodeWalker.OIVInstaller
         private void InitializeKeys(IProgress<InstallProgress> progress)
         {
             if (_keysInitialized) return;
-            if (GTA5Keys.PC_AES_KEY != null) 
+            if (GTA5Keys.PC_AES_KEY != null &&
+                (Encryption != RpfEncryption.NG ||
+                 (GTA5Keys.PC_NG_KEYS != null && GTA5Keys.PC_NG_ENCRYPT_TABLES != null && GTA5Keys.PC_NG_ENCRYPT_LUTs != null)))
             {
                 _keysInitialized = true;
                 return;
@@ -139,6 +241,7 @@ namespace CodeWalker.OIVInstaller
                               File.Exists(Path.Combine(GameFolder, "GTA5_Enhanced.exe"));
                 
                 GTA5Keys.LoadFromPath(GameFolder, isGen9, null);
+                if (Encryption == RpfEncryption.NG) GTA5Keys.EnsureNgEncryptionTables(message => Log(message));
                 
                 if (GTA5Keys.PC_AES_KEY != null)
                 {
@@ -210,8 +313,8 @@ namespace CodeWalker.OIVInstaller
                 return;
             }
 
-            // Ensure OPEN encryption
-            EnsureOpenEncryption(rpf);
+            // Ensure the selected encryption before modifying the archive.
+            EnsureSelectedEncryption(rpf);
 
             // Process child operations
             foreach (var childOp in op.Children)
@@ -228,6 +331,20 @@ namespace CodeWalker.OIVInstaller
             progress?.Report(new InstallProgress(percent, $"Adding: {op.Destination}"));
             
             Log($"Adding: {op.Source} -> {op.Destination}");
+
+            string compatibilityFileName = Path.GetFileName(op.Destination.Replace('/', '\\'));
+            if (CompatibilityMode && WeaponCompatibility.TryGetValue(compatibilityFileName, out var compatibilityDestinations))
+            {
+                try
+                {
+                    ProcessCompatibilityAdd(op.Source, compatibilityFileName, compatibilityDestinations);
+                }
+                catch (Exception ex)
+                {
+                    Log($"ERROR adding compatibility file {op.Source}: {ex.Message}");
+                }
+                return;
+            }
 
             if (rpf == null)
             {
@@ -262,12 +379,14 @@ namespace CodeWalker.OIVInstaller
                 RpfDirectoryEntry targetDir = rpf.Root;
                 if (!string.IsNullOrEmpty(destDir))
                 {
-                    targetDir = EnsureDirectory(rpf, destDir);
+                    targetDir = CompatibilityMode ? FindDirectory(rpf, destDir) : EnsureDirectory(rpf, destDir);
                 }
 
                 if (targetDir == null)
                 {
-                    Log($"ERROR: Could not create directory: {destDir}");
+                    Log(CompatibilityMode
+                        ? $"  COMPATIBILITY SKIP: Destination directory does not exist: {rpf.Path}\\{destDir}"
+                        : $"ERROR: Could not create directory: {destDir}");
                     return;
                 }
 
@@ -275,7 +394,7 @@ namespace CodeWalker.OIVInstaller
                 
                 // --- BACKUP LOGIC (RPF) ---
                 var existingFile = targetDir.Files?.FirstOrDefault(f => f.Name.Equals(destFileName, StringComparison.OrdinalIgnoreCase));
-                if (existingFile != null) Log($"  Backing up original file: {destFileName}");
+                if (existingFile != null) Log($"  Replacing: {rpf.Path}\\{destPath}");
                 if (existingFile != null)
                 {
                     // It's a replacement - backup original with RSC7 header preserved
@@ -284,6 +403,12 @@ namespace CodeWalker.OIVInstaller
                 }
                 else
                 {
+                    if (CompatibilityMode)
+                    {
+                        Log($"  COMPATIBILITY SKIP: File does not already exist: {rpf.Path}\\{destPath}");
+                        return;
+                    }
+                    Log($"  WARNING: Adding new file to RPF (not replacing an existing file): {destPath}");
                     // It's a new file - log as added
                     // BackupManager handles "added" logic if we pass a path that doesn't exist on disk?
                     // But for RPF, we need to log it specially as "RPF Added".
@@ -303,6 +428,49 @@ namespace CodeWalker.OIVInstaller
             catch (Exception ex)
             {
                 Log($"ERROR adding file {op.Destination}: {ex.Message}");
+            }
+        }
+
+        private void ProcessCompatibilityAdd(string source, string fileName, string[] destinations)
+        {
+            long sourceSize = Package.GetContentFileSize(source);
+            if (sourceSize > MaxRpfEntryBytes)
+            {
+                Log($"ERROR: {source} is {FormatSize(sourceSize)}, too large to store inside an RPF.");
+                return;
+            }
+
+            byte[] data = Package.ReadContentFile(source);
+            foreach (string destinationArchive in destinations)
+            {
+                int rootEnd = destinationArchive.IndexOf(".rpf\\", StringComparison.OrdinalIgnoreCase);
+                string rootPath = rootEnd < 0 ? destinationArchive : destinationArchive.Substring(0, rootEnd + 4);
+                string nestedPath = rootEnd < 0 ? null : destinationArchive.Substring(rootEnd + 5);
+                string fullDestination = destinationArchive + "\\" + fileName;
+
+                RpfFile targetRpf = GetOrCopyRpfToMods(rootPath, false);
+                if (targetRpf != null && !string.IsNullOrEmpty(nestedPath))
+                    targetRpf = GetNestedRpf(targetRpf, nestedPath, false);
+                if (targetRpf?.Root == null)
+                {
+                    Log($"  COMPATIBILITY SKIP: Destination archive does not exist: {destinationArchive}");
+                    continue;
+                }
+
+                EnsureSelectedEncryption(targetRpf);
+                var existingFile = targetRpf.Root.Files?.FirstOrDefault(f =>
+                    f.Name.Equals(fileName, StringComparison.OrdinalIgnoreCase)) as RpfFileEntry;
+                if (existingFile == null)
+                {
+                    Log($"  COMPATIBILITY SKIP: File does not already exist: {fullDestination}");
+                    continue;
+                }
+
+                Log($"  Compatibility replacing: {fullDestination}");
+                if (!_skipBackup)
+                    _backupSession.BackupRpfFile(targetRpf.Path, fileName, RpfFileHelper.ExtractFileRaw(existingFile));
+                RpfFile.CreateFile(targetRpf.Root, fileName, data, overwrite: true);
+                Log($"  Replaced {fileName} ({data.Length} bytes)");
             }
         }
 
@@ -395,7 +563,7 @@ namespace CodeWalker.OIVInstaller
                 string destPath = op.Destination.Replace("/", "\\").TrimStart('\\');
 
                 string targetFolder = GameFolder;
-                string modsFolder = Path.Combine(GameFolder, "mods");
+                string modsFolder = ModsFolder;
 
                 // A package may already spell the destination out as "mods\...". Strip
                 // that prefix so it isn't re-applied below into mods\mods\... (same
@@ -406,10 +574,10 @@ namespace CodeWalker.OIVInstaller
 
                 // Determine if this should go to mods folder
                 // RPF files, or files going to update/ or x64/ typically belong in mods
-                bool useMods = destWasModsPrefixed ||
+                bool useMods = UseModsFolder && (destWasModsPrefixed ||
                                destPath.StartsWith("update", StringComparison.OrdinalIgnoreCase) ||
                                destPath.StartsWith("x64", StringComparison.OrdinalIgnoreCase) ||
-                               destPath.EndsWith(".rpf", StringComparison.OrdinalIgnoreCase);
+                               destPath.EndsWith(".rpf", StringComparison.OrdinalIgnoreCase));
 
                 if (useMods)
                 {
@@ -422,7 +590,9 @@ namespace CodeWalker.OIVInstaller
                     Log($"  Targeting mods folder for: {destPath}");
                 }
                 
-                string fullDestPath = Path.Combine(targetFolder, destPath);
+                string fullDestPath = !UseModsFolder && IsVersionedUpdateRpf(destPath)
+                    ? GetVanillaPath(destPath)
+                    : Path.Combine(targetFolder, destPath);
 
                 // Ensure destination directory exists
                 string destDir = Path.GetDirectoryName(fullDestPath);
@@ -1154,8 +1324,11 @@ namespace CodeWalker.OIVInstaller
                 relativePath = relativePath.Substring(5); // Remove "mods\" or "mods/"
             }
             
-            string modsPath = Path.Combine(ModsFolder, relativePath);
-            string vanillaPath = Path.Combine(GameFolder, relativePath);
+            string modsPath = UseModsFolder ? Path.Combine(ModsFolder, relativePath) : GetVanillaPath(relativePath);
+            string modsRelativePath = UseModsFolder
+                ? GetModsRelativePath(relativePath)
+                : modsPath.Substring(GameFolder.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string vanillaPath = GetVanillaPath(relativePath);
 
             // Check cache first
             if (_openRpfs.TryGetValue(modsPath, out var cachedRpf))
@@ -1174,7 +1347,7 @@ namespace CodeWalker.OIVInstaller
             // Copy from vanilla if not in mods
             if (!File.Exists(modsPath))
             {
-                if (!_skipBackup) _backupSession.BackupFile(relativePath); // Checks existence on disk. Since it doesn't exist, it tracks as Added.
+                if (!_skipBackup) _backupSession.BackupFile(modsRelativePath); // Tracks the version-specific copy for uninstall.
 
                 if (!File.Exists(vanillaPath))
                 {
@@ -1183,7 +1356,8 @@ namespace CodeWalker.OIVInstaller
                         Log($"Creating new archive: {modsPath}");
                         try
                         {
-                            var rpf = RpfFile.CreateNew(ModsFolder, relativePath, RpfEncryption.OPEN);
+                            var rpf = RpfFile.CreateNew(GameFolder, modsRelativePath, Encryption);
+                            rpf.Path = modsRelativePath.ToLowerInvariant();
                             
                             // Initialize basic structure if needed or just trust CreateNew
                             // CreateNew calls WriteNewArchive, which sets headers.
@@ -1204,14 +1378,17 @@ namespace CodeWalker.OIVInstaller
                     return null;
                 }
 
-                Log($"Copying {relativePath} to mods folder...");
-                File.Copy(vanillaPath, modsPath);
+                if (UseModsFolder)
+                {
+                    Log($"Copying {relativePath} to mods folder...");
+                    File.Copy(vanillaPath, modsPath);
+                }
             }
 
             // Open the RPF
             try
             {
-                var rpf = new RpfFile(modsPath, "mods\\" + relativePath);
+                var rpf = new RpfFile(modsPath, modsRelativePath);
                 rpf.ScanStructure(null, (err) => Log($"RPF Error: {err}"));
                 _openRpfs[modsPath] = rpf;
                 return rpf;
@@ -1221,6 +1398,29 @@ namespace CodeWalker.OIVInstaller
                 Log($"ERROR opening RPF {modsPath}: {ex.Message}");
                 return null;
             }
+        }
+
+        private string GetVanillaPath(string relativePath)
+        {
+            string normalized = relativePath.Replace('/', '\\').TrimStart('\\');
+            string fileName = Path.GetFileName(normalized);
+            if (!string.IsNullOrEmpty(ParagonBuild) && IsVersionedUpdateRpf(normalized))
+            {
+                return Path.Combine(GameFolder, "update", "versions", ParagonBuild, fileName);
+            }
+
+            return Path.Combine(GameFolder, relativePath);
+        }
+
+        private string GetModsRelativePath(string relativePath) => string.IsNullOrEmpty(ParagonBuild)
+            ? Path.Combine("mods", relativePath)
+            : Path.Combine("mods", "versions", ParagonBuild, relativePath);
+
+        private static bool IsVersionedUpdateRpf(string relativePath)
+        {
+            string normalized = relativePath.Replace('/', '\\').TrimStart('\\');
+            return normalized.Equals("update\\update.rpf", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("update\\update2.rpf", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -1273,7 +1473,7 @@ namespace CodeWalker.OIVInstaller
                     }
                     
                     // Create the nested RPF using CodeWalker's built-in method
-                    var newRpf = RpfFile.CreateNew(targetDir, rpfName, RpfEncryption.OPEN);
+                    var newRpf = RpfFile.CreateNew(targetDir, rpfName, Encryption);
                     
                     // Track as added to parent RPF
                     if (!_skipBackup) _backupSession.TrackRpfAdded(parentRpf.Path, nestedPath);
@@ -1293,14 +1493,14 @@ namespace CodeWalker.OIVInstaller
         }
 
         /// <summary>
-        /// Ensures the RPF and all parents have OPEN encryption
+        /// Ensures the RPF and all parents use the selected encryption.
         /// </summary>
-        private void EnsureOpenEncryption(RpfFile rpf)
+        private void EnsureSelectedEncryption(RpfFile rpf)
         {
-            if (rpf.Encryption != RpfEncryption.OPEN)
+            if (!RpfFile.IsValidEncryption(rpf, Encryption, recursive: true))
             {
-                Log($"Converting {rpf.Name} to OPEN encryption...");
-                RpfFile.EnsureValidEncryption(rpf, null, true);
+                Log($"Converting {rpf.Name} to {Encryption} encryption...");
+                RpfFile.EnsureEncryption(rpf, Encryption, null, recursive: true);
             }
         }
 

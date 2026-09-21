@@ -367,7 +367,7 @@ namespace CodeWalker
 
 
             formopen = true;
-            new Thread(new ThreadStart(ContentThread)).Start();
+            new Thread(new ThreadStart(ContentThread)) { IsBackground = true }.Start();
 
             frametimer.Start();
         }
@@ -375,21 +375,20 @@ namespace CodeWalker
         {
             formopen = false;
 
-            Renderer.DeviceDestroyed();
+            int count = 0;
+            while (running && (count < 250))
+            {
+                Thread.Sleep(1);
+                count++;
+            }
 
+            Renderer.DeviceDestroyed();
             if (Icons != null)
             {
                 foreach (MapIcon icon in Icons)
                 {
                     icon.UnloadTexture();
                 }
-            }
-
-            int count = 0;
-            while (running && (count < 5000)) //wait for the content thread to exit gracefully
-            {
-                Thread.Sleep(1);
-                count++;
             }
         }
         public void BuffersResized(int w, int h)
@@ -4376,6 +4375,7 @@ namespace CodeWalker
             }
             catch
             {
+                running = false;
                 MessageBox.Show("Keys not found! This shouldn't happen, GTA5.exe outdated? CodeWalker outdated?");
                 Close();
                 return;
@@ -4397,6 +4397,7 @@ namespace CodeWalker
             }
             catch (Exception ex)
             {
+                running = false;
                 MessageBox.Show($"Failed to load world: {ex.Message}");
                 Close();
                 return;
@@ -4449,6 +4450,7 @@ namespace CodeWalker
                 }
                 catch (Exception ex)
                 {
+                    running = false;
                     MessageBox.Show($"GameFileCache Failed: {ex.Message}");
                     Close();
                     return;
@@ -4456,9 +4458,8 @@ namespace CodeWalker
 #endif
             }
 
-            gameFileCache.Clear();
-
             running = false;
+            gameFileCache.Clear();
         }
 
 

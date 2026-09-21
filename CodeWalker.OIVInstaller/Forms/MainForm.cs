@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Linq;
+using CodeWalker.GameFiles;
 
 namespace CodeWalker.OIVInstaller
 {
@@ -139,10 +140,11 @@ namespace CodeWalker.OIVInstaller
         // Right so changing .Left expands their Width to keep the Browse button gap.
         private void AlignPathFieldsToLabels()
         {
-            int rightOfWiderLabel = Math.Max(lblOivLabel.Right, lblGameFolderLabel.Right);
+            int rightOfWiderLabel = Math.Max(Math.Max(lblOivLabel.Right, lblGameFolderLabel.Right), lblParagonVersion.Right);
             int textboxLeft = rightOfWiderLabel + 6;
             txtOivPath.Left = textboxLeft;
             txtGameFolder.Left = textboxLeft;
+            cmbParagonVersion.Left = textboxLeft;
             lblGameStatus.Left = textboxLeft;
             lblAsiStatus.Left = textboxLeft;
         }
@@ -601,8 +603,6 @@ namespace CodeWalker.OIVInstaller
             // that covers both Legacy (gen8, formerly OpenIV.asi) and Enhanced (gen9, formerly OpenRPF.asi)
             // mods-folder loading. Treat its presence as satisfying either requirement.
             bool hasRageOpenV = File.Exists(Path.Combine(_gameFolder, "RageOpenV.asi"));
-            bool hasLegacyLoader = hasOpenIV || hasRageOpenV;
-            bool hasEnhancedLoader = hasOpenRPF || hasRageOpenV;
             bool hasDinput8 = File.Exists(Path.Combine(_gameFolder, "dinput8.dll"));
             bool hasXinput = File.Exists(Path.Combine(_gameFolder, "xinput1_4.dll"));
             
@@ -640,10 +640,6 @@ namespace CodeWalker.OIVInstaller
                     lblGameStatus.Text = "✓ Valid GTA V folder (Enhanced)";
                     lblGameStatus.ForeColor = Color.Green;
                     
-                    if (!hasXinput)
-                        asiStatus = "⚠ ASI Loader (xinput1_4.dll) missing";
-                    else if (!hasEnhancedLoader)
-                        asiStatus = "⚠ OpenRPF.asi or RageOpenV.asi missing - mods folder disabled";
                 }
             }
             else if (hasLegacy)
@@ -658,10 +654,6 @@ namespace CodeWalker.OIVInstaller
                     lblGameStatus.Text = "✓ Valid GTA V folder (Legacy)";
                     lblGameStatus.ForeColor = Color.Green;
 
-                    if (!hasDinput8)
-                         asiStatus = "⚠ ASI Loader (dinput8.dll) missing";
-                    else if (!hasLegacyLoader)
-                        asiStatus = "⚠ OpenIV.asi or RageOpenV.asi missing - mods folder disabled";
                 }
             }
             else
@@ -1340,6 +1332,46 @@ namespace CodeWalker.OIVInstaller
                 return;
             }
 
+            string paragonBuild = cmbParagonVersion.Text switch
+            {
+                "1.61" => "18893",
+                "1.69" => "23359",
+                "1.73" => "27223",
+                _ => null,
+            };
+            bool useModsFolder = !chkNoModsFolder.Checked;
+            bool compatibilityMode = chkCompatibilityMode.Checked;
+            var encryption = (RpfEncryption)Enum.Parse(typeof(RpfEncryption), cmbRpfEncryption.Text);
+            if (!useModsFolder && MessageBox.Show(
+                    "This will modify RPF archives in the game folder directly. Continue?",
+                    "Direct RPF Installation", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+            {
+                return;
+            }
+            string modsFolder = string.IsNullOrEmpty(paragonBuild)
+                ? Path.Combine(_gameFolder, "mods")
+                : Path.Combine(_gameFolder, "mods", "versions", paragonBuild);
+            bool clearModsFolder = false;
+            try
+            {
+                if (useModsFolder && Directory.Exists(modsFolder) && Directory.EnumerateFileSystemEntries(modsFolder).Any())
+                {
+                    var result = MessageBox.Show(
+                        $"The current mods folder already contains files:\n\n{modsFolder}\n\nDelete its old contents before installing?",
+                        "Existing Mods Found", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning,
+                        MessageBoxDefaultButton.Button2);
+                    if (result == DialogResult.Cancel) return;
+                    clearModsFolder = result == DialogResult.Yes;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not check the mods folder:\n\n{ex.Message}", "Mods Folder Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
             // Check for existing installations with the same name
             var backupManager = new BackupManager(_gameFolder);
             var existingPackages = backupManager.GetInstalledPackages()
@@ -1447,8 +1479,9 @@ namespace CodeWalker.OIVInstaller
                     if (skipBackup)
                         Log("Backup creation: DISABLED (Manage Mods will not see this install)");
 
-                    var installer = new OivInstaller(_gameFolder, _package, message => Log(message));
-                    installer.Install(progress, packagesToUninstall, uninstallMode, skipBackup);
+                    var installer = new OivInstaller(_gameFolder, _package, message => Log(message),
+                        paragonBuild, encryption, useModsFolder, compatibilityMode);
+                    installer.Install(progress, packagesToUninstall, uninstallMode, skipBackup, clearModsFolder);
                     
                     Log(""); // Spacer
                     Log("Installation completed successfully.");

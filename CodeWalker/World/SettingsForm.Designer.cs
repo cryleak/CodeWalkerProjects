@@ -47,6 +47,8 @@
             this.KeyBindButton = new System.Windows.Forms.Button();
             this.label1 = new System.Windows.Forms.Label();
             this.AdvancedTabPage = new System.Windows.Forms.TabPage();
+            this.RpfEncryptionLabel = new System.Windows.Forms.Label();
+            this.RpfEncryptionComboBox = new System.Windows.Forms.ComboBox();
             this.label22 = new System.Windows.Forms.Label();
             this.CollisionCacheSizeUpDown = new System.Windows.Forms.NumericUpDown();
             this.label23 = new System.Windows.Forms.Label();
@@ -295,7 +297,9 @@
             this.label1.Text = "Key:";
             // 
             // AdvancedTabPage
-            // 
+            //
+            this.AdvancedTabPage.Controls.Add(this.RpfEncryptionComboBox);
+            this.AdvancedTabPage.Controls.Add(this.RpfEncryptionLabel);
             this.AdvancedTabPage.Controls.Add(this.label22);
             this.AdvancedTabPage.Controls.Add(this.CollisionCacheSizeUpDown);
             this.AdvancedTabPage.Controls.Add(this.label23);
@@ -333,6 +337,28 @@
             this.AdvancedTabPage.TabIndex = 1;
             this.AdvancedTabPage.Text = "Advanced";
             this.AdvancedTabPage.UseVisualStyleBackColor = true;
+            //
+            // RpfEncryptionLabel
+            //
+            this.RpfEncryptionLabel.AutoSize = true;
+            this.RpfEncryptionLabel.Location = new System.Drawing.Point(6, 378);
+            this.RpfEncryptionLabel.Name = "RpfEncryptionLabel";
+            this.RpfEncryptionLabel.Size = new System.Drawing.Size(84, 13);
+            this.RpfEncryptionLabel.TabIndex = 78;
+            this.RpfEncryptionLabel.Text = "RPF encryption:";
+            //
+            // RpfEncryptionComboBox
+            //
+            this.RpfEncryptionComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.RpfEncryptionComboBox.FormattingEnabled = true;
+            this.RpfEncryptionComboBox.Items.AddRange(new object[] {
+            "OPEN",
+            "NG"});
+            this.RpfEncryptionComboBox.Location = new System.Drawing.Point(110, 374);
+            this.RpfEncryptionComboBox.Name = "RpfEncryptionComboBox";
+            this.RpfEncryptionComboBox.Size = new System.Drawing.Size(90, 21);
+            this.RpfEncryptionComboBox.TabIndex = 79;
+            this.RpfEncryptionComboBox.SelectedIndexChanged += new System.EventHandler(this.RpfEncryptionComboBox_SelectedIndexChanged);
             // 
             // label22
             // 
@@ -883,5 +909,7 @@
         private System.Windows.Forms.NumericUpDown TextureCacheSizeUpDown;
         private System.Windows.Forms.Label label21;
         private System.Windows.Forms.CheckBox MouseInvertCheckBox;
+        private System.Windows.Forms.Label RpfEncryptionLabel;
+        private System.Windows.Forms.ComboBox RpfEncryptionComboBox;
     }
 }

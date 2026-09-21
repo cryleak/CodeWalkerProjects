@@ -42,6 +42,7 @@ namespace CodeWalker.GameFiles
     public static class GTA5Keys
     {
         public static string ToS = "(c)2017";
+        private static readonly object NgEncryptionSync = new object();
 
         // aes decryption/encryption key...
         public static byte[] PC_AES_KEY; // 32
@@ -104,52 +105,115 @@ namespace CodeWalker.GameFiles
 
 
 
-            updateStatus("Calculating NG encryption tables...");
-            PC_NG_ENCRYPT_TABLES = new uint[17][][];
-            for (int i = 0; i < 17; i++)
+            EnsureNgEncryptionTables(updateStatus);
+            updateStatus("Complete.");
+        }
+
+        public static void EnsureNgEncryptionTables(Action<string> updateStatus = null)
+        {
+            lock (NgEncryptionSync)
             {
-                PC_NG_ENCRYPT_TABLES[i] = new uint[16][];
-                for (int j = 0; j < 16; j++)
+                if (PC_NG_ENCRYPT_TABLES != null && PC_NG_ENCRYPT_LUTs != null) return;
+                if (PC_NG_KEYS == null || PC_NG_DECRYPT_TABLES == null)
+                    throw new InvalidOperationException("The GTA V NG keys and decrypt tables have not been loaded.");
+
+                string cacheFolder = AppDomain.CurrentDomain.BaseDirectory;
+                string tablesCache = Path.Combine(cacheFolder, "gtav_ng_encrypt_tables.dat");
+                string lutsCache = Path.Combine(cacheFolder, "gtav_ng_encrypt_luts.dat");
+                if (File.Exists(tablesCache) && File.Exists(lutsCache))
                 {
-                    PC_NG_ENCRYPT_TABLES[i][j] = new uint[256];
-                    for (int k = 0; k < 256; k++)
+                    try
                     {
-                        PC_NG_ENCRYPT_TABLES[i][j][k] = 0;
+                        updateStatus?.Invoke("Loading cached NG encryption tables...");
+                        var tables = CryptoIO.ReadNgTables(tablesCache);
+                        var luts = CryptoIO.ReadNgLuts(lutsCache);
+                        if (tables?.Length == 17 && luts?.Length == 17)
+                        {
+                            PC_NG_ENCRYPT_TABLES = tables;
+                            PC_NG_ENCRYPT_LUTs = luts;
+                            return;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        updateStatus?.Invoke("Ignoring invalid NG encryption cache: " + ex.Message);
                     }
                 }
-            }
 
-            PC_NG_ENCRYPT_LUTs = new GTA5NGLUT[17][];
-            for (int i = 0; i < 17; i++)
+                try
+                {
+                    updateStatus?.Invoke("Loading embedded NG encryption tables...");
+                    var tables = CryptoIO.ReadNgTables(ReadCompressedResource("gtav_ng_encrypt_tables.dat.gz"));
+                    var luts = CryptoIO.ReadNgLuts(ReadCompressedResource("gtav_ng_encrypt_luts.dat.gz"));
+                    if (tables?.Length == 17 && luts?.Length == 17)
+                    {
+                        PC_NG_ENCRYPT_TABLES = tables;
+                        PC_NG_ENCRYPT_LUTs = luts;
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    updateStatus?.Invoke("Could not load embedded NG encryption cache: " + ex.Message);
+                }
+
+                updateStatus?.Invoke("Calculating NG encryption tables...");
+                PC_NG_ENCRYPT_TABLES = new uint[17][][];
+                for (int i = 0; i < 17; i++)
+                {
+                    PC_NG_ENCRYPT_TABLES[i] = new uint[16][];
+                    for (int j = 0; j < 16; j++)
+                    {
+                        PC_NG_ENCRYPT_TABLES[i][j] = new uint[256];
+                    }
+                }
+
+                PC_NG_ENCRYPT_LUTs = new GTA5NGLUT[17][];
+                for (int i = 0; i < 17; i++)
+                {
+                    PC_NG_ENCRYPT_LUTs[i] = new GTA5NGLUT[16];
+                    for (int j = 0; j < 16; j++) PC_NG_ENCRYPT_LUTs[i][j] = new GTA5NGLUT();
+                }
+
+                updateStatus?.Invoke("Calculating NG encryption tables (1/17)...");
+                PC_NG_ENCRYPT_TABLES[0] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[0]);
+                updateStatus?.Invoke("Calculating NG encryption tables (2/17)...");
+                PC_NG_ENCRYPT_TABLES[1] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[1]);
+                for (int k = 2; k <= 15; k++)
+                {
+                    updateStatus?.Invoke("Calculating NG encryption tables (" + (k + 1).ToString() + "/17)...");
+                    PC_NG_ENCRYPT_LUTs[k] = LookUpTableGenerator.BuildLUTs2(PC_NG_DECRYPT_TABLES[k]);
+                }
+                updateStatus?.Invoke("Calculating NG encryption tables (17/17)...");
+                PC_NG_ENCRYPT_TABLES[16] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[16]);
+
+                try
+                {
+                    updateStatus?.Invoke("Saving NG encryption cache...");
+                    CryptoIO.WriteNgTables(tablesCache, PC_NG_ENCRYPT_TABLES);
+                    CryptoIO.WriteLuts(lutsCache, PC_NG_ENCRYPT_LUTs);
+                }
+                catch (Exception ex)
+                {
+                    updateStatus?.Invoke("Could not save NG encryption cache: " + ex.Message);
+                }
+            }
+        }
+
+        private static byte[] ReadCompressedResource(string fileName)
+        {
+            var assembly = typeof(GTA5Keys).Assembly;
+            string resourceName = assembly.GetManifestResourceNames()
+                .FirstOrDefault(name => name.EndsWith(fileName, StringComparison.OrdinalIgnoreCase));
+            if (resourceName == null) throw new FileNotFoundException("Embedded resource not found.", fileName);
+
+            using (var resource = assembly.GetManifestResourceStream(resourceName))
+            using (var gzip = new GZipStream(resource, CompressionMode.Decompress))
+            using (var output = new MemoryStream())
             {
-                PC_NG_ENCRYPT_LUTs[i] = new GTA5NGLUT[16];
-                for (int j = 0; j < 16; j++)
-                    PC_NG_ENCRYPT_LUTs[i][j] = new GTA5NGLUT();
+                gzip.CopyTo(output);
+                return output.ToArray();
             }
-
-
-
-
-            updateStatus("Calculating NG encryption tables (1/17)...");
-            PC_NG_ENCRYPT_TABLES[0] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[0]);
-            //updateStatus("ng encrypt table 1 of 17 calculated");
-
-            updateStatus("Calculating NG encryption tables (2/17)...");
-            PC_NG_ENCRYPT_TABLES[1] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[1]);
-            //updateStatus("ng encrypt table 2 of 17 calculated");
-
-            for (int k = 2; k <= 15; k++)
-            {
-                updateStatus("Calculating NG encryption tables (" + (k + 1).ToString() + "/17)...");
-                PC_NG_ENCRYPT_LUTs[k] = LookUpTableGenerator.BuildLUTs2(PC_NG_DECRYPT_TABLES[k]);
-                //updateStatus("ng encrypt table " + (k + 1).ToString() + " of 17 calculated");
-            }
-
-            updateStatus("Calculating NG encryption tables (17/17)...");
-            PC_NG_ENCRYPT_TABLES[16] = RandomGauss.Solve(PC_NG_DECRYPT_TABLES[16]);
-            //updateStatus("ng encrypt table 17 of 17 calculated");
-
-            updateStatus("Complete.");
         }
 
 
@@ -250,8 +314,8 @@ namespace CodeWalker.GameFiles
 
             if (string.IsNullOrEmpty(key))
             {
-                var exefile = gen9 ? "\\gta5_enhanced.exe" : "\\gta5.exe";
-                byte[] exedata = File.ReadAllBytes(path + exefile);
+                var exefile = gen9 ? "GTA5_Enhanced.exe" : "GTA5.exe";
+                byte[] exedata = File.ReadAllBytes(Path.Combine(path, exefile));
                 GenerateV2(exedata, null);
             }
             else

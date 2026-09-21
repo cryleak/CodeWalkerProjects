@@ -38,7 +38,13 @@ namespace CodeWalker.OIVInstaller
             this.btnBrowseGame = new System.Windows.Forms.Button();
             this.lblGameStatus = new System.Windows.Forms.Label();
             this.lblAsiStatus = new System.Windows.Forms.Label();
+            this.lblParagonVersion = new System.Windows.Forms.Label();
+            this.cmbParagonVersion = new System.Windows.Forms.ComboBox();
             this.chkSkipBackup = new System.Windows.Forms.CheckBox();
+            this.lblRpfEncryption = new System.Windows.Forms.Label();
+            this.cmbRpfEncryption = new System.Windows.Forms.ComboBox();
+            this.chkNoModsFolder = new System.Windows.Forms.CheckBox();
+            this.chkCompatibilityMode = new System.Windows.Forms.CheckBox();
             this.panelInfo = new System.Windows.Forms.Panel();
             this.lblInfoTitle = new System.Windows.Forms.Label();
             this.lblCreator = new System.Windows.Forms.Label();
@@ -291,6 +297,12 @@ namespace CodeWalker.OIVInstaller
             // 
             this.panelPaths.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
             this.panelPaths.Controls.Add(this.chkSkipBackup);
+            this.panelPaths.Controls.Add(this.chkCompatibilityMode);
+            this.panelPaths.Controls.Add(this.chkNoModsFolder);
+            this.panelPaths.Controls.Add(this.cmbRpfEncryption);
+            this.panelPaths.Controls.Add(this.lblRpfEncryption);
+            this.panelPaths.Controls.Add(this.cmbParagonVersion);
+            this.panelPaths.Controls.Add(this.lblParagonVersion);
             this.panelPaths.Controls.Add(this.lblAsiStatus);
             this.panelPaths.Controls.Add(this.lblGameStatus);
             this.panelPaths.Controls.Add(this.btnBrowseGame);
@@ -301,7 +313,7 @@ namespace CodeWalker.OIVInstaller
             this.panelPaths.Controls.Add(this.lblOivLabel);
             this.panelPaths.Location = new System.Drawing.Point(20, 160);
             this.panelPaths.Name = "panelPaths";
-            this.panelPaths.Size = new System.Drawing.Size(660, 125);
+            this.panelPaths.Size = new System.Drawing.Size(660, 150);
             this.panelPaths.TabIndex = 1;
             // 
             // lblOivLabel
@@ -392,6 +404,33 @@ namespace CodeWalker.OIVInstaller
             this.lblAsiStatus.Size = new System.Drawing.Size(0, 13);
             this.lblAsiStatus.TabIndex = 7;
             //
+            // lblParagonVersion
+            //
+            this.lblParagonVersion.AutoSize = true;
+            this.lblParagonVersion.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblParagonVersion.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(60)))), ((int)(((byte)(60)))), ((int)(((byte)(60)))));
+            this.lblParagonVersion.Location = new System.Drawing.Point(0, 101);
+            this.lblParagonVersion.Name = "lblParagonVersion";
+            this.lblParagonVersion.Size = new System.Drawing.Size(99, 15);
+            this.lblParagonVersion.TabIndex = 8;
+            this.lblParagonVersion.Text = "Paragon Version:";
+            //
+            // cmbParagonVersion
+            //
+            this.cmbParagonVersion.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbParagonVersion.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.cmbParagonVersion.FormattingEnabled = true;
+            this.cmbParagonVersion.Items.AddRange(new object[] {
+            "1.61",
+            "1.69",
+            "1.73",
+            "None"});
+            this.cmbParagonVersion.Location = new System.Drawing.Point(105, 98);
+            this.cmbParagonVersion.Name = "cmbParagonVersion";
+            this.cmbParagonVersion.Size = new System.Drawing.Size(90, 23);
+            this.cmbParagonVersion.TabIndex = 9;
+            this.cmbParagonVersion.SelectedIndex = 0;
+            //
             // chkSkipBackup
             //
             this.chkSkipBackup.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
@@ -403,9 +442,58 @@ namespace CodeWalker.OIVInstaller
             this.chkSkipBackup.Location = new System.Drawing.Point(380, 100);
             this.chkSkipBackup.Name = "chkSkipBackup";
             this.chkSkipBackup.Size = new System.Drawing.Size(280, 17);
-            this.chkSkipBackup.TabIndex = 8;
-            this.chkSkipBackup.Text = "Skip backup (faster, can’t uninstall later)";
+            this.chkSkipBackup.TabIndex = 10;
+            this.chkSkipBackup.Text = "Skip backup";
             this.chkSkipBackup.UseVisualStyleBackColor = true;
+            this.chkSkipBackup.Checked = true;
+            //
+            // lblRpfEncryption
+            //
+            this.lblRpfEncryption.AutoSize = true;
+            this.lblRpfEncryption.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            this.lblRpfEncryption.Location = new System.Drawing.Point(0, 130);
+            this.lblRpfEncryption.Name = "lblRpfEncryption";
+            this.lblRpfEncryption.Size = new System.Drawing.Size(87, 13);
+            this.lblRpfEncryption.TabIndex = 11;
+            this.lblRpfEncryption.Text = "RPF encryption:";
+            //
+            // cmbRpfEncryption
+            //
+            this.cmbRpfEncryption.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbRpfEncryption.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            this.cmbRpfEncryption.FormattingEnabled = true;
+            this.cmbRpfEncryption.Items.AddRange(new object[] {
+            "OPEN",
+            "NG"});
+            this.cmbRpfEncryption.Location = new System.Drawing.Point(105, 125);
+            this.cmbRpfEncryption.Name = "cmbRpfEncryption";
+            this.cmbRpfEncryption.Size = new System.Drawing.Size(90, 21);
+            this.cmbRpfEncryption.TabIndex = 12;
+            this.cmbRpfEncryption.SelectedIndex = 1;
+            //
+            // chkNoModsFolder
+            //
+            this.chkNoModsFolder.AutoSize = true;
+            this.chkNoModsFolder.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.chkNoModsFolder.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            this.chkNoModsFolder.Location = new System.Drawing.Point(260, 127);
+            this.chkNoModsFolder.Name = "chkNoModsFolder";
+            this.chkNoModsFolder.Size = new System.Drawing.Size(140, 17);
+            this.chkNoModsFolder.TabIndex = 13;
+            this.chkNoModsFolder.Text = "Do not use mods folder";
+            this.chkNoModsFolder.UseVisualStyleBackColor = true;
+            //
+            // chkCompatibilityMode
+            //
+            this.chkCompatibilityMode.AutoSize = true;
+            this.chkCompatibilityMode.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.chkCompatibilityMode.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            this.chkCompatibilityMode.Location = new System.Drawing.Point(425, 127);
+            this.chkCompatibilityMode.Name = "chkCompatibilityMode";
+            this.chkCompatibilityMode.Size = new System.Drawing.Size(220, 17);
+            this.chkCompatibilityMode.TabIndex = 14;
+            this.chkCompatibilityMode.Text = "Modern GTA Legacy compatibility mode (experimental)";
+            this.chkCompatibilityMode.UseVisualStyleBackColor = true;
             // 
             // panelInfo
             // 
@@ -671,7 +759,13 @@ namespace CodeWalker.OIVInstaller
         private System.Windows.Forms.Button btnBrowseGame;
         private System.Windows.Forms.Label lblGameStatus;
         private System.Windows.Forms.Label lblAsiStatus;
+        private System.Windows.Forms.Label lblParagonVersion;
+        private System.Windows.Forms.ComboBox cmbParagonVersion;
         private System.Windows.Forms.CheckBox chkSkipBackup;
+        private System.Windows.Forms.Label lblRpfEncryption;
+        private System.Windows.Forms.ComboBox cmbRpfEncryption;
+        private System.Windows.Forms.CheckBox chkNoModsFolder;
+        private System.Windows.Forms.CheckBox chkCompatibilityMode;
         private System.Windows.Forms.Panel panelInfo;
         private System.Windows.Forms.Label lblInfoTitle;
         private System.Windows.Forms.Label lblCreator;

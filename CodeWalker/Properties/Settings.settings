@@ -200,6 +200,9 @@
     <Setting Name="RPFExplorerStartFolder" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
     </Setting>
+    <Setting Name="RPFEncryption" Type="System.String" Scope="User">
+      <Value Profile="(Default)">NG</Value>
+    </Setting>
     <Setting Name="TimeOfDay" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">720</Value>
     </Setting>

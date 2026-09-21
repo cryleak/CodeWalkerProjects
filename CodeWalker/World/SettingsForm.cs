@@ -82,6 +82,8 @@ namespace CodeWalker.World
             GeometryCacheSizeUpDown.Value = Math.Min(Math.Max(Settings.Default.GPUGeometryCacheSize / 1048576, GeometryCacheSizeUpDown.Minimum), GeometryCacheSizeUpDown.Maximum);
             TextureCacheSizeUpDown.Value = Math.Min(Math.Max(Settings.Default.GPUTextureCacheSize / 1048576, TextureCacheSizeUpDown.Minimum), TextureCacheSizeUpDown.Maximum);
             CollisionCacheSizeUpDown.Value = Math.Min(Math.Max(Settings.Default.GPUBoundCompCacheSize / 1048576, CollisionCacheSizeUpDown.Minimum), CollisionCacheSizeUpDown.Maximum);
+            RpfEncryptionComboBox.SelectedItem = Settings.Default.RPFEncryption;
+            if (RpfEncryptionComboBox.SelectedIndex < 0) RpfEncryptionComboBox.SelectedIndex = 1;
         }
 
 
@@ -320,6 +322,11 @@ namespace CodeWalker.World
         private void CollisionCacheSizeUpDown_ValueChanged(object sender, EventArgs e)
         {
             Settings.Default.GPUBoundCompCacheSize = (long)CollisionCacheSizeUpDown.Value * 1048576;
+        }
+
+        private void RpfEncryptionComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            Settings.Default.RPFEncryption = RpfEncryptionComboBox.Text;
         }
     }
 }
