@@ -194,7 +194,7 @@ namespace CodeWalker.OIVInstaller
             Console.WriteLine("  --help                    Show this help message");
             Console.WriteLine("  --set-game <path>         Set default GTA5 game folder");
             Console.WriteLine("  --get-game                Show current default game folder");
-            Console.WriteLine("  --install <path>          Install a mod package (.oiv or .rpf)");
+            Console.WriteLine("  --install <path>          Install a mod package (.oiv, .zip, or .rpf)");
             Console.WriteLine("  --uninstall <name>        Uninstall a mod by name");
             Console.WriteLine("  --list                    List installed mods");
             Console.WriteLine("  --game <path>             Override game folder for this command");

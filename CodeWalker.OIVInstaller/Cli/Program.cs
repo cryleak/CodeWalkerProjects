@@ -213,6 +213,7 @@ namespace CodeWalker.OIVInstaller
                             // Unknown argument - might be a path for install?
                             if (!arg.StartsWith("-") && File.Exists(args[i]) &&
                                 (args[i].EndsWith(".oiv", StringComparison.OrdinalIgnoreCase) ||
+                                 args[i].EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
                                  args[i].EndsWith(".oivs", StringComparison.OrdinalIgnoreCase)))
                             {
                                 oivPath = args[i];

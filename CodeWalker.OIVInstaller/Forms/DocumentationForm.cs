@@ -101,7 +101,7 @@ namespace CodeWalker.OIVInstaller
 ==========================
 
 1. Installation
-   - The window opens on an empty landing card. Drag any .oiv, .oivs or .rpf
+   - The window opens on an empty landing card. Drag any .oiv, .zip, .oivs or .rpf
      onto it, or click 'Browse...' next to OIV Package to pick one.
    - The card disappears and the package's description, info, and an Install
      button slide in. The window grows to fit the content.
@@ -206,7 +206,7 @@ namespace CodeWalker.OIVInstaller
    - The installer supports full automation via command line.
    - Usage: CodeWalker.OIVInstaller.exe [options]
    - Options:
-     --install <path>       Install an OIV (.oiv) or Super OIV (.oivs) package
+     --install <path>       Install an OIV (.oiv/.zip) or Super OIV (.oivs) package
      --select ""<spec>""      Choose .oivs components, e.g.
                             ""addon1,group=option,group2=none"" (with --install)
      --list-options <path>  List the modules and option groups in a .oivs

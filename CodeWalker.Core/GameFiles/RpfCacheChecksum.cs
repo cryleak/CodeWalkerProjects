@@ -4,7 +4,7 @@ using System.IO;
 namespace CodeWalker.GameFiles
 {
     /// <summary>
-    /// GTA V Enhanced HSHR checksum.
+    /// GTA V Enhanced HSHR checksum
     /// </summary>
     public static class RpfCacheChecksum
     {

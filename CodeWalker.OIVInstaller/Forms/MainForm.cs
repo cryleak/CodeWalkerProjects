@@ -259,7 +259,7 @@ namespace CodeWalker.OIVInstaller
                     LoadOivsPackage(a);
                     break;
                 }
-                if (a.EndsWith(".oiv", StringComparison.OrdinalIgnoreCase) || a.EndsWith(".rpf", StringComparison.OrdinalIgnoreCase))
+                if (IsOivArchive(a) || a.EndsWith(".rpf", StringComparison.OrdinalIgnoreCase))
                 {
                     txtOivPath.Text = a;
                     LoadOivPackage(a);
@@ -273,7 +273,7 @@ namespace CodeWalker.OIVInstaller
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            // Release extracted package temp folders (.oivs/.oiv unpack to %TEMP% on
+            // Release extracted package temp folders (.oivs/.oiv/.zip unpack to %TEMP% on
             // load — ~1 GB+ for large packs). Without this they accumulate until reboot.
             try { _package?.Dispose(); } catch { }
             try { _oivsPackage?.Dispose(); } catch { }
@@ -355,7 +355,7 @@ namespace CodeWalker.OIVInstaller
         }
 
         // Accept four kinds of drops:
-        //   .oiv file                          → OIV package install
+        //   .oiv/.zip file                    → OIV package install
         //   .rpf file (not named "dlc.rpf")    → OIV-as-RPF package install
         //   dlc.rpf file                       → add-on install (prompt for name)
         //   folder containing dlc.rpf          → add-on install (folder name as add-on name)
@@ -364,11 +364,15 @@ namespace CodeWalker.OIVInstaller
             if (Directory.Exists(path))
                 return File.Exists(Path.Combine(path, "dlc.rpf"));
             if (!File.Exists(path)) return false;
-            if (path.EndsWith(".oiv", StringComparison.OrdinalIgnoreCase)) return true;
+            if (IsOivArchive(path)) return true;
             if (path.EndsWith(".oivs", StringComparison.OrdinalIgnoreCase)) return true;
             if (path.EndsWith(".rpf", StringComparison.OrdinalIgnoreCase)) return true;
             return false;
         }
+
+        private static bool IsOivArchive(string path) =>
+            path.EndsWith(".oiv", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
 
         private void MainForm_DragDrop(object sender, DragEventArgs e)
         {
@@ -413,7 +417,7 @@ namespace CodeWalker.OIVInstaller
                 return;
             }
 
-            if (path.EndsWith(".oiv", StringComparison.OrdinalIgnoreCase)
+            if (IsOivArchive(path)
                 || path.EndsWith(".rpf", StringComparison.OrdinalIgnoreCase))
             {
                 txtOivPath.Text = path;
@@ -426,7 +430,7 @@ namespace CodeWalker.OIVInstaller
             using (var dlg = new OpenFileDialog())
             {
                 dlg.Title = "Select OIV / Super OIV / RPF Package";
-                dlg.Filter = "All Packages (*.oiv;*.oivs;*.rpf)|*.oiv;*.oivs;*.rpf|Super OIV (*.oivs)|*.oivs|OIV/RPF (*.oiv;*.rpf)|*.oiv;*.rpf|All Files (*.*)|*.*";
+                dlg.Filter = "All Packages (*.oiv;*.zip;*.oivs;*.rpf)|*.oiv;*.zip;*.oivs;*.rpf|Super OIV (*.oivs)|*.oivs|OIV/ZIP/RPF (*.oiv;*.zip;*.rpf)|*.oiv;*.zip;*.rpf|All Files (*.*)|*.*";
 
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {
